@@ -7,8 +7,19 @@ const CONFIG_PATH = "./.chainvouch_config.json";
 
 // Section 4.3: Smart Contract ABIs
 const REGISTRY_ABI = ["function registerProject(string _projectId, string[] _maintainers) public", "function getMaintainers(string _projectId) public view returns (string[])"];
-const VOUCH_LOG_ABI = ["function recordVouch(string _projectId, string _contributor, string _maintainer, bytes _sig, uint8 _type, string _reason) public", "function getEventCount() public view returns (uint256)", "function vouchEvents(uint256) public view returns (string, string, string, bytes, uint256, uint8, string)"];
-const ENDORSE_ABI = ["function recordEndorsement(string _source, string _target, string _maintainer, bytes _sig) public", "function getEndorsementCount() public view returns (uint256)", "function endorsements(uint256) public view returns (string, string, string, bytes, uint256)"];
+const VOUCH_LOG_ABI = [
+    "function recordVouch(string _projectId, string _contributor, string _maintainer, bytes _sig, uint8 _type, string _reason) public",
+    "function getEventCount() public view returns (uint256)",
+    "function vouchEvents(uint256) public view returns (string, string, string, bytes, uint256, uint8, string)",
+    "function getVouchesFor(string _projectId, string _contributor) public view returns (tuple(string projectId, string contributor, string maintainer, bytes signature, uint256 timestamp, uint8 eventType, string reason)[])",
+    "function getDenouncements(string _projectId, string _contributor) public view returns (tuple(string projectId, string contributor, string maintainer, bytes signature, uint256 timestamp, uint8 eventType, string reason)[])"
+];
+const ENDORSE_ABI = [
+    "function recordEndorsement(string _source, string _target, string _maintainer, bytes _sig) public",
+    "function getEndorsementCount() public view returns (uint256)",
+    "function endorsements(uint256) public view returns (string, string, string, bytes, uint256)",
+    "function getEndorsementsFor(string _projectId) public view returns (tuple(string sourceProjectId, string targetProjectId, string maintainer, bytes signature, uint256 timestamp)[])"
+];
 
 function loadConfig() { return JSON.parse(fs.readFileSync(CONFIG_PATH)); }
 
@@ -42,7 +53,8 @@ async function recordVouchOrDenounce(projectId, contributor, maintainer, reason,
     const keys = await verifyGitHubIdentity(maintainer);
     if (keys.length === 0) return console.error("❌ Invalid Maintainer Identity");
 
-    const vouchLog = await getContract("0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512", VOUCH_LOG_ABI, true);
+    const config = loadConfig();
+    const vouchLog = await getContract(config.vouchLogAddress, VOUCH_LOG_ABI, true);
     const type = isDenounce ? 1 : 0;
     const tx = await vouchLog.recordVouch(projectId, contributor, maintainer, "0x00", type, reason);
     await tx.wait();
@@ -50,7 +62,8 @@ async function recordVouchOrDenounce(projectId, contributor, maintainer, reason,
 }
 
 async function endorse(source, target, maintainer) {
-    const endorseLog = await getContract("0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0", ENDORSE_ABI, true);
+    const config = loadConfig();
+    const endorseLog = await getContract(config.endorseLogAddress, ENDORSE_ABI, true);
     const tx = await endorseLog.recordEndorsement(source, target, maintainer, "0x00");
     await tx.wait();
     console.log(`✅ Endorsement from ${source} to ${target} Recorded!`);
@@ -58,31 +71,48 @@ async function endorse(source, target, maintainer) {
 
 // Section 4.4: Trust Score Math (S(c) = Σ (1 + E(p)))
 async function check(contributor) {
-    const vouchLog = await getContract("0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512", VOUCH_LOG_ABI);
-    const endorseLog = await getContract("0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0", ENDORSE_ABI);
-    
+    const config = loadConfig();
+    const vouchLog = await getContract(config.vouchLogAddress, VOUCH_LOG_ABI);
+    const endorseLog = await getContract(config.endorseLogAddress, ENDORSE_ABI);
+
     const vCount = await vouchLog.getEventCount();
-    const eCount = await endorseLog.getEndorsementCount();
     let score = 0;
     let badFlag = false;
 
+    // Collect unique projectIds that have vouched for this contributor
+    const projectIds = new Set();
     for (let i = 0; i < vCount; i++) {
         const v = await vouchLog.vouchEvents(i);
         if (v[1].toLowerCase() === contributor.toLowerCase()) {
-            if (Number(v[5]) === 1) badFlag = true;
-            let weight = 1;
-            for (let j = 0; j < eCount; j++) {
-                const e = await endorseLog.endorsements(j);
-                if (e[1] === v[0]) weight++;
-            }
+            projectIds.add(v[0]);
+        }
+    }
+
+    for (const projectId of projectIds) {
+        const vouches = await vouchLog.getVouchesFor(projectId, contributor);
+        const denouncements = await vouchLog.getDenouncements(projectId, contributor);
+
+        if (denouncements.length > 0) badFlag = true;
+
+        if (vouches.length > 0) {
+            const endorsements = await endorseLog.getEndorsementsFor(projectId);
+            const weight = 1 + endorsements.length;
             score += weight;
-            console.log(`🔍 Vouch: ${v[0]} (Weight: ${weight})`);
+            console.log(`🔍 Vouch: ${projectId} (Weight: ${weight})`);
         }
     }
 
     console.log(`--- Result for ${contributor} ---`);
-    if (badFlag) console.log("🚨 STATUS: DENOUNCED (DO NOT MERGE)");
-    else console.log(`Trust Score: ${score} | Status: ${score >= 2 ? "TRUSTED" : "UNVERIFIED"}`);
+    if (badFlag) {
+        console.log("🚨 STATUS: DENOUNCED (DO NOT MERGE)");
+        process.exit(1);
+    } else if (score < 2) {
+        console.log(`Trust Score: ${score} | Status: UNVERIFIED`);
+        process.exit(2);
+    } else {
+        console.log(`Trust Score: ${score} | Status: TRUSTED`);
+        process.exit(0);
+    }
 }
 
 const [,, cmd, a1, a2, a3, a4] = process.argv;

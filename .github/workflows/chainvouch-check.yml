@@ -9,3 +9,5 @@ jobs:
         run: |
           npm install
           node cli.js check ${{ github.event.pull_request.user.login }}
+        # Exit codes: 0 = TRUSTED, 1 = DENOUNCED, 2 = UNVERIFIED
+        # The step fails (blocking merge) for exit codes 1 and 2.
