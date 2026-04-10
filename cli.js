@@ -1,7 +1,10 @@
 import { ethers } from "ethers";
 import fs from "fs";
 import axios from "axios";
+import sshpkModule from "sshpk";
 import 'dotenv/config';
+
+const sshpk = sshpkModule;
 
 const CONFIG_PATH = "./.chainvouch_config.json";
 
@@ -20,6 +23,45 @@ const ENDORSE_ABI = [
     "function endorsements(uint256) public view returns (string, string, string, bytes, uint256)",
     "function getEndorsementsFor(string _projectId) public view returns (tuple(string sourceProjectId, string targetProjectId, string maintainer, bytes signature, uint256 timestamp)[])"
 ];
+
+async function init() {
+    // Generate Ethereum keypair
+    const wallet = ethers.Wallet.createRandom();
+    let config = {};
+    if (fs.existsSync(CONFIG_PATH)) {
+        config = JSON.parse(fs.readFileSync(CONFIG_PATH));
+    }
+
+    // Generate SSH keypair for signing
+    const sshKey = sshpk.generatePrivateKey('ecdsa');
+    const sshPrivatePem = sshKey.toString('pkcs8');
+    const sshPublicKey = sshKey.toPublic().toString('ssh');
+
+    config.walletAddress = wallet.address;
+    config.walletPrivateKey = wallet.privateKey;
+    config.sshPrivateKey = sshPrivatePem;
+    config.sshPublicKey = sshPublicKey;
+
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+
+    console.log("ChainVouch initialized.");
+    console.log(`Wallet address: ${wallet.address}`);
+    console.log(`SSH public key: ${sshPublicKey}`);
+    console.log("");
+    console.log("Next steps:");
+    console.log("  1. Fund your wallet with Sepolia ETH: https://sepoliafaucet.com");
+    console.log("  2. Add contract addresses to .chainvouch_config.json");
+    console.log("  3. Run: node cli.js register <projectId> <maintainer1,...>");
+}
+
+function signPayload(config, payload) {
+    if (!config.sshPrivateKey) return "0x00";
+    const key = sshpk.parseKey(config.sshPrivateKey, 'pkcs8');
+    const signer = key.createSign('sha256');
+    signer.update(payload);
+    const sig = signer.sign();
+    return "0x" + sig.toBuffer().toString("hex");
+}
 
 function loadConfig() {
     if (!fs.existsSync(CONFIG_PATH)) {
@@ -62,7 +104,10 @@ async function recordVouchOrDenounce(projectId, contributor, maintainer, reason,
     const config = loadConfig();
     const vouchLog = await getContract(config.vouchLogAddress, VOUCH_LOG_ABI, true);
     const type = isDenounce ? 1 : 0;
-    const tx = await vouchLog.recordVouch(projectId, contributor, maintainer, "0x00", type, reason);
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const payload = [projectId, contributor, maintainer, timestamp].join(":");
+    const sig = signPayload(config, payload);
+    const tx = await vouchLog.recordVouch(projectId, contributor, maintainer, sig, type, reason);
     await tx.wait();
     console.log(`✅ ${isDenounce ? 'Denouncement' : 'Vouch'} Recorded!`);
 }
@@ -70,7 +115,10 @@ async function recordVouchOrDenounce(projectId, contributor, maintainer, reason,
 async function endorse(source, target, maintainer) {
     const config = loadConfig();
     const endorseLog = await getContract(config.endorseLogAddress, ENDORSE_ABI, true);
-    const tx = await endorseLog.recordEndorsement(source, target, maintainer, "0x00");
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const payload = [source, target, maintainer, timestamp].join(":");
+    const sig = signPayload(config, payload);
+    const tx = await endorseLog.recordEndorsement(source, target, maintainer, sig);
     await tx.wait();
     console.log(`✅ Endorsement from ${source} to ${target} Recorded!`);
 }
@@ -122,7 +170,8 @@ async function check(contributor) {
 }
 
 const [,, cmd, a1, a2, a3, a4] = process.argv;
-if (cmd === "register") register(a1, a2);
+if (cmd === "init") init();
+else if (cmd === "register") register(a1, a2);
 else if (cmd === "vouch") recordVouchOrDenounce(a1, a2, a3, a4, false);
 else if (cmd === "denounce") recordVouchOrDenounce(a1, a2, a3, a4, true);
 else if (cmd === "endorse") endorse(a1, a2, a3);
