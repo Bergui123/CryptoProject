@@ -21,7 +21,13 @@ const ENDORSE_ABI = [
     "function getEndorsementsFor(string _projectId) public view returns (tuple(string sourceProjectId, string targetProjectId, string maintainer, bytes signature, uint256 timestamp)[])"
 ];
 
-function loadConfig() { return JSON.parse(fs.readFileSync(CONFIG_PATH)); }
+function loadConfig() {
+    if (!fs.existsSync(CONFIG_PATH)) {
+        console.log("No config found — skipping check (UNVERIFIED)");
+        process.exit(2);
+    }
+    return JSON.parse(fs.readFileSync(CONFIG_PATH));
+}
 
 async function getContract(address, abi, withSigner = false) {
     const config = loadConfig();
