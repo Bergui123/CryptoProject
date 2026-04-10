@@ -55,4 +55,21 @@ contract EndorsementLog {
     function getEndorsementCount() public view returns (uint256) {
         return endorsements.length;
     }
+
+    function getEndorsementsFor(string memory _projectId) public view returns (Endorsement[] memory) {
+        uint256 count = 0;
+        for (uint256 i = 0; i < endorsements.length; i++) {
+            if (keccak256(bytes(endorsements[i].targetProjectId)) == keccak256(bytes(_projectId))) {
+                count++;
+            }
+        }
+        Endorsement[] memory result = new Endorsement[](count);
+        uint256 idx = 0;
+        for (uint256 i = 0; i < endorsements.length; i++) {
+            if (keccak256(bytes(endorsements[i].targetProjectId)) == keccak256(bytes(_projectId))) {
+                result[idx++] = endorsements[i];
+            }
+        }
+        return result;
+    }
 }
