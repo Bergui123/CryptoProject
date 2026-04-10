@@ -1,5 +1,6 @@
 {
-  "walletPrivateKey": "0xb6903e97acc1535f3537873e3c6c2e7361ba1d6d9ab2b796e213e3488b709109",
-  "walletAddress": "0x2654b22146d4a8f20Cbf5e8848E22003534dEB6c",
-  "network": "sepolia"
+  "walletPrivateKey": "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+  "walletAddress": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+  "network": "local",
+  "registryAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3"
 }

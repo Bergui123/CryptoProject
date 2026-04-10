@@ -1,0 +1,11 @@
+name: ChainVouch PR Check
+on: [pull_request]
+jobs:
+  check-reputation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run ChainVouch Check
+        run: |
+          npm install
+          node cli.js check ${{ github.event.pull_request.user.login }}
