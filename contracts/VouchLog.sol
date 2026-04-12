@@ -41,6 +41,11 @@ contract VouchLog {
         EventType _eventType,
         string memory _reason
     ) public {
+        require(
+            keccak256(bytes(_maintainer)) != keccak256(bytes(_contributor)),
+            "ChainVouch: Cannot vouch for yourself"
+        );
+
         VouchEvent memory newEvent = VouchEvent({
             projectId: _projectId,
             contributor: _contributor,
@@ -69,5 +74,47 @@ contract VouchLog {
      */
     function getEventCount() public view returns (uint256) {
         return vouchEvents.length;
+    }
+
+    function getVouchesFor(string memory _projectId, string memory _contributor) public view returns (VouchEvent[] memory) {
+        uint256 count = 0;
+        for (uint256 i = 0; i < vouchEvents.length; i++) {
+            if (vouchEvents[i].eventType == EventType.Vouch &&
+                keccak256(bytes(vouchEvents[i].projectId)) == keccak256(bytes(_projectId)) &&
+                keccak256(bytes(vouchEvents[i].contributor)) == keccak256(bytes(_contributor))) {
+                count++;
+            }
+        }
+        VouchEvent[] memory result = new VouchEvent[](count);
+        uint256 idx = 0;
+        for (uint256 i = 0; i < vouchEvents.length; i++) {
+            if (vouchEvents[i].eventType == EventType.Vouch &&
+                keccak256(bytes(vouchEvents[i].projectId)) == keccak256(bytes(_projectId)) &&
+                keccak256(bytes(vouchEvents[i].contributor)) == keccak256(bytes(_contributor))) {
+                result[idx++] = vouchEvents[i];
+            }
+        }
+        return result;
+    }
+
+    function getDenouncements(string memory _projectId, string memory _contributor) public view returns (VouchEvent[] memory) {
+        uint256 count = 0;
+        for (uint256 i = 0; i < vouchEvents.length; i++) {
+            if (vouchEvents[i].eventType == EventType.Denounce &&
+                keccak256(bytes(vouchEvents[i].projectId)) == keccak256(bytes(_projectId)) &&
+                keccak256(bytes(vouchEvents[i].contributor)) == keccak256(bytes(_contributor))) {
+                count++;
+            }
+        }
+        VouchEvent[] memory result = new VouchEvent[](count);
+        uint256 idx = 0;
+        for (uint256 i = 0; i < vouchEvents.length; i++) {
+            if (vouchEvents[i].eventType == EventType.Denounce &&
+                keccak256(bytes(vouchEvents[i].projectId)) == keccak256(bytes(_projectId)) &&
+                keccak256(bytes(vouchEvents[i].contributor)) == keccak256(bytes(_contributor))) {
+                result[idx++] = vouchEvents[i];
+            }
+        }
+        return result;
     }
 }

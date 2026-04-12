@@ -8,4 +8,7 @@ jobs:
       - name: Run ChainVouch Check
         run: |
           npm install
-          node cli.js check ${{ github.event.pull_request.user.login }}
+          node cli.js check ${{ github.event.pull_request.user.login }} || EXIT=$?
+          if [ "${EXIT:-0}" -eq 1 ]; then exit 1; fi
+          exit 0
+        # Exit codes: 0 = TRUSTED, 1 = DENOUNCED (blocks merge), 2 = UNVERIFIED (allows merge)

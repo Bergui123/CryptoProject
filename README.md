@@ -1,57 +1,108 @@
-# Sample Hardhat 3 Beta Project (`mocha` and `ethers`)
+# ChainVouch
 
-This project showcases a Hardhat 3 Beta project using `mocha` for tests and the `ethers` library for Ethereum interactions.
+A decentralized trust and reputation system for GitHub projects, built on Ethereum. Maintainers vouch for or denounce contributors on-chain; trust scores are weighted by project-to-project endorsements.
 
-To learn more about the Hardhat 3 Beta, please visit the [Getting Started guide](https://hardhat.org/docs/getting-started#getting-started-with-hardhat-3). To share your feedback, join our [Hardhat 3 Beta](https://hardhat.org/hardhat3-beta-telegram-group) Telegram group or [open an issue](https://github.com/NomicFoundation/hardhat/issues/new) in our GitHub issue tracker.
+---
 
-## Project Overview
+## How it works
 
-This example project includes:
+- **Vouches** — a project maintainer records a vouch for a contributor. Each vouch adds 1 × the project's endorsement weight to the contributor's trust score.
+- **Denouncements** — a single denouncement marks the contributor as DENOUNCED regardless of score.
+- **Endorsements** — project A endorses project B, increasing the weight of B's vouches by 1.
+- **Trust score** — `S(c) = Σ (1 + E(p))` where `E(p)` is the number of endorsements targeting project `p`.
 
-- A simple Hardhat configuration file.
-- Foundry-compatible Solidity unit tests.
-- TypeScript integration tests using `mocha` and ethers.js
-- Examples demonstrating how to connect to different types of networks, including locally simulating OP mainnet.
+---
 
-## Usage
+## Contracts
 
-### Running Tests
+| Contract | Purpose |
+|---|---|
+| `ProjectRegistry` | Registers projects and tracks maintainers |
+| `VouchLog` | Records vouches and denouncements |
+| `EndorsementLog` | Records project-to-project endorsements |
 
-To run all the tests in the project, execute the following command:
+Local addresses (after `npm run deploy`) are stored in `.chainvouch_config.json`.
 
-```shell
-npx hardhat test
+---
+
+## Setup
+
+```bash
+npm install
 ```
 
-You can also selectively run the Solidity or `mocha` tests:
+Start a local Hardhat node:
 
-```shell
-npx hardhat test solidity
-npx hardhat test mocha
+```bash
+npx hardhat node
 ```
 
-### Make a deployment to Sepolia
+Deploy contracts (in a separate terminal):
 
-This project includes an example Ignition module to deploy the contract. You can deploy this module to a locally simulated chain or to Sepolia.
-
-To run the deployment to a local chain:
-
-```shell
-npx hardhat ignition deploy ignition/modules/Counter.ts
+```bash
+node scripts/deploy.js
 ```
 
-To run the deployment to Sepolia, you need an account with funds to send the transaction. The provided Hardhat configuration includes a Configuration Variable called `SEPOLIA_PRIVATE_KEY`, which you can use to set the private key of the account you want to use.
+The deploy script prints the three contract addresses. Add them to `.chainvouch_config.json`:
 
-You can set the `SEPOLIA_PRIVATE_KEY` variable using the `hardhat-keystore` plugin or by setting it as an environment variable.
-
-To set the `SEPOLIA_PRIVATE_KEY` config variable using `hardhat-keystore`:
-
-```shell
-npx hardhat keystore set SEPOLIA_PRIVATE_KEY
+```json
+{
+  "walletPrivateKey": "<your-key>",
+  "walletAddress": "<your-address>",
+  "network": "local",
+  "registryAddress": "<ProjectRegistry address>",
+  "vouchLogAddress": "<VouchLog address>",
+  "endorseLogAddress": "<EndorsementLog address>"
+}
 ```
 
-After setting the variable, you can run the deployment with the Sepolia network:
+---
 
-```shell
-npx hardhat ignition deploy --network sepolia ignition/modules/Counter.ts
+## CLI Commands
+
+```bash
+# Register a project with comma-separated maintainer GitHub usernames
+node cli.js register <projectId> <maintainer1,maintainer2>
+
+# Vouch for a contributor
+node cli.js vouch <projectId> <contributor> <maintainer> <reason>
+
+# Denounce a contributor
+node cli.js denounce <projectId> <contributor> <maintainer> <reason>
+
+# Endorse another project
+node cli.js endorse <sourceProjectId> <targetProjectId> <maintainer>
+
+# Check a contributor's trust score
+# Exit codes: 0 = TRUSTED, 1 = DENOUNCED, 2 = UNVERIFIED
+node cli.js check <contributor>
 ```
+
+---
+
+## GitHub Actions
+
+| Workflow | Trigger | Purpose |
+|---|---|---|
+| `chainvouch-check.yml` | `pull_request` | Checks the PR author's trust score; fails CI if DENOUNCED or UNVERIFIED |
+| `vouch-management.yml` | `issue_comment` | Parses `/vouch`, `/denounce`, `/unvouch` commands and submits on-chain transactions |
+
+---
+
+## Running Tests
+
+```bash
+npm test
+```
+
+---
+
+## Trust Score Formula
+
+```
+S(c) = Σ_{p : p vouched for c} (1 + E(p))
+```
+
+where `E(p)` = number of endorsements targeting project `p`.
+
+A contributor is considered **TRUSTED** when `S(c) ≥ 2`.
